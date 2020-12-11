@@ -1,0 +1,10 @@
+{{- if .Values.workers.keda.enabled  }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ .Release.Name }}-worker
+spec:                       # Required.
+  env:                                                # Optional.
+  - parameter: connection         # Required.
+    name: AIRFLOW_CONN_AIRFLOW_DB                                # Required.
+{{- end }}

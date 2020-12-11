@@ -1,0 +1,60 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+################################
+## Airflow Worker KEDA Scaler
+#################################
+{{- if .Values.workers.keda.enabled  }}
+
+{{- $postgreHost := .Values.data.metadataConnection.host | default (printf "%s-%s.%s.svc.cluster.local" .Release.Name "postgresql" .Release.Namespace) }}
+{{- $pgbouncerHost := (printf "%s-%s.%s.svc.cluster.local" .Release.Name "pgbouncer" .Release.Namespace) }}
+{{- $port := ((ternary .Values.ports.pgbouncer .Values.data.metadataConnection.port .Values.pgbouncer.enabled) | toString) }}
+{{- $database := (ternary (printf "%s-%s" .Release.Name "metadata") .Values.data.metadataConnection.db .Values.pgbouncer.enabled) }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels:
+    tier: airflow
+    component: worker-horizontalpodautoscaler
+    release: {{ .Release.Name }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    heritage: {{ .Release.Service }}
+    deploymentName: {{ .Release.Name }}-worker
+{{- with .Values.labels }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+spec:
+  scaleTargetRef:
+    name: {{ .Release.Name }}-worker
+  pollingInterval:  {{  .Values.workers.keda.pollingInterval }}   # Optional. Default: 30 seconds
+  cooldownPeriod: {{  .Values.workers.keda.cooldownPeriod }}    # Optional. Default: 300 seconds
+  maxReplicaCount: {{  .Values.workers.keda.maxReplicaCount }}   # Optional. Default: 100
+  triggers:
+    - type: postgresql
+      authenticationRef: 
+        name: {{ .Release.Name }}-worker
+      metadata:
+        targetQueryValue: "1"
+        query: "SELECT ceil(COUNT(*)::decimal / 16) FROM task_instance WHERE state='running' OR state='queued'"
+        userName: postgres
+        passwordFromEnv: PG_PASSWORD
+        host: {{ (printf "%s" $postgreHost) }} #use the cluster-wide namespace as KEDA                                              #lives in a different namespace from your postgres
+        port: "5432"
+        dbName: postgres
+        sslmode: disable
+{{- end }}
